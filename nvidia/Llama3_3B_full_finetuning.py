@@ -24,24 +24,26 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 # Define prompt templates
-ALPACA_PROMPT_TEMPLATE = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+DATASET_PROMPT_TEMPLATE = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 ### Instruction: {}
 
 ### Input: {}
 
 ### Response: {}"""
 
-def get_alpaca_dataset(eos_token, dataset_size=512):
+def get_dataset(dataset_name, dataset_dir, dataset_files, eos_token, dataset_size=512):
     # Preprocess the dataset
     def preprocess(x):
         texts = [
-            ALPACA_PROMPT_TEMPLATE.format(instruction, input, output) + eos_token
+            DATASET_PROMPT_TEMPLATE.format(instruction, input, output) + eos_token
             for instruction, input, output in zip(x["instruction"], x["input"], x["output"])
         ]
         return {"text": texts}
 
-    dataset = load_dataset("tatsu-lab/alpaca", split="train").select(range(dataset_size)).shuffle(seed=42)
-    return dataset.map(preprocess, remove_columns=dataset.column_names, batched=True)
+    dataset = load_dataset(dataset_name, data_dir=dataset_dir, data_files=dataset_files, split="train")
+    if len(dataset) > dataset_size:
+        dataset = dataset.select(range(dataset_size))
+    return dataset.shuffle(seed=42).map(preprocess, remove_columns=dataset.column_names, batched=True)
 
 
 def main(args):
@@ -64,7 +66,7 @@ def main(args):
 
     # Load and preprocess the dataset
     print(f"Loading dataset with {args.dataset_size} samples...")
-    dataset = get_alpaca_dataset(tokenizer.eos_token, args.dataset_size)
+    dataset = get_dataset(args.dataset, args.dataset_dir, args.dataset_files, tokenizer.eos_token, args.dataset_size)
 
     # Configure the SFT config
     config = {
@@ -122,6 +124,12 @@ def main(args):
     print(f"Train loss: {trainer_stats.metrics['train_loss']:.4f}")
     print(f"{'='*60}\n")
 
+    # Save model if requested
+    if args.output_dir:
+        print(f"Saving model to {args.output_dir}...")
+        trainer.save_model(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print("Model saved successfully!")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Llama 3.2 3B Full Fine-tuning (SFT)")
@@ -148,6 +156,12 @@ def parse_arguments():
                         help="Enable gradient checkpointing to save memory")
 
     # Dataset configuration
+    parser.add_argument("--dataset", type=str, default="tatsu-lab/alpaca",
+                        help="Dataset name, path, or builder (csv, json, parquet, etc.)")
+    parser.add_argument("--dataset_dir", type=str, default=None,
+                        help="Directory containing the dataset (if using a local dataset)")
+    parser.add_argument("--dataset_files", type=str, default=None,
+                        help="Files containing the dataset (overrides dataset_dir if provided)")
     parser.add_argument("--dataset_size", type=int, default=512,
                         help="Number of samples to use from dataset")
 
@@ -156,6 +170,8 @@ def parse_arguments():
                         help="Log every N steps")
     parser.add_argument("--log_dir", type=str, default="logs",
                         help="Directory for logs")
+    parser.add_argument("--output_dir", type=str, default=None,
+                        help="Directory to save the fine-tuned model")
 
     return parser.parse_args()
 
@@ -166,6 +182,11 @@ if __name__ == "__main__":
     print("LLAMA 3.2 3B FULL FINE-TUNING CONFIGURATION")
     print(f"{'='*60}")
     print(f"Model: {args.model_name}")
+    print(f"Dataset: {args.dataset}")
+    if args.dataset_dir:
+        print(f"Dataset directory: {args.dataset_dir}")
+    if args.dataset_files:
+        print(f"Dataset files: {args.dataset_files}")
     print(f"Training mode: Full SFT ")
     print(f"Batch size: {args.batch_size}")
     print(f"Gradient accumulation: {args.gradient_accumulation_steps}")
