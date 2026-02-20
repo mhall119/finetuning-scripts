@@ -42,8 +42,8 @@ def get_dataset(dataset_name, dataset_dir, dataset_files, eos_token, dataset_siz
 
     dataset = load_dataset(dataset_name, data_dir=dataset_dir, data_files=dataset_files, split="train")
     if len(dataset) > dataset_size:
-        dataset = dataset.select(range(dataset_size))
-    return dataset.shuffle(seed=42).map(preprocess, remove_columns=dataset.column_names, batched=True)
+        dataset = dataset.select(range(dataset_size)).shuffle(seed=42)
+    return dataset.map(preprocess, remove_columns=dataset.column_names, batched=True)
 
 
 def main(args):
@@ -127,7 +127,7 @@ def main(args):
     # Save model if requested
     if args.output_dir:
         print(f"Saving model to {args.output_dir}...")
-        trainer.save_model(args.output_dir)
+        model.save_pretrained(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
         print("Model saved successfully!")
 
